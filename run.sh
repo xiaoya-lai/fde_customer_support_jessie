@@ -60,6 +60,14 @@ SQL
     exec "$ROOT/.venv/bin/uvicorn" guards.judge.server:app --host 127.0.0.1 --port "$JUDGE_PORT"
     ;;
 
+  masker)
+    # Start the A2A Data Masker as its own process on its own port (K-1).
+    set -a; . "$ROOT/.env"; set +a
+    export MASKER_PORT="${MASKER_PORT:-10003}"
+    export PYTHONPATH="$ROOT:${PYTHONPATH:-}"
+    exec "$ROOT/.venv/bin/uvicorn" guards.masker.server:app --host 127.0.0.1 --port "$MASKER_PORT"
+    ;;
+
   phoenix)
     # Start Phoenix as its own long-lived process with on-disk storage, so traces
     # survive a CLI/agent restart (O-1). Leave this running in its own terminal.
@@ -75,6 +83,6 @@ SQL
     ;;
 
   help|*)
-    echo "usage: ./run.sh {setup|reset|toolbox|judge|phoenix|status}"
+    echo "usage: ./run.sh {setup|reset|toolbox|judge|masker|phoenix|status}"
     ;;
 esac

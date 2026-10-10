@@ -42,6 +42,9 @@ def _render(ev: dict) -> None:
     elif t == "step":
         mark = "✓" if ev["status"] == "passed" else "✗"
         print(f"{mark} {ev['key']:<9} {ev['status']} · {ev['detail']} · {ev['ms']}ms · {ev['span']}")
+        for m in ev.get("memories", []):
+            tag = "inserted" if m["inserted"] else f"skipped ({m['reason']})"
+            print(f"    · {m['score']:>6}  {tag}  {m['memory']}")
     elif t == "llm":
         print(f"→ llm         {ev['decision']}   ({ev['ms']}ms, {ev['tokens_out']} tok)")
     elif t == "tool_call":

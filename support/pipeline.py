@@ -21,14 +21,18 @@ from opentelemetry import context as context_api
 from opentelemetry import trace as otel_trace
 from opentelemetry.trace import Status, StatusCode
 
+from guards.guardrail import OFFTOPIC_REPLY, check as guardrail_check
 from guards.sanitizer import sanitize
-from support import telemetry
+from support import memory, telemetry
 from support.agent import MODEL, set_session_email
 
 RUNS_DIR = Path(__file__).resolve().parent.parent / "runs"
 JUDGE_URL = os.environ.get("JUDGE_URL", "http://localhost:10002")
+MASKER_URL = os.environ.get("MASKER_URL", "http://localhost:10003")
 _CHAIN = OpenInferenceSpanKindValues.CHAIN.value
 _GUARDRAIL = OpenInferenceSpanKindValues.GUARDRAIL.value
+_RETRIEVER = OpenInferenceSpanKindValues.RETRIEVER.value
+_TOOL = OpenInferenceSpanKindValues.TOOL.value
 BLOCKED_REPLY = "Sorry — I can't help with that request."
 
 
@@ -46,6 +50,23 @@ async def _ask_judge(message: str) -> dict:
     if result.get("verdict") not in ("allow", "block"):
         raise ValueError(f"unparseable judge verdict: {body!r}")
     return {"verdict": result["verdict"], "reason": result.get("reason", "")}
+
+
+async def _ask_masker(text: str, own_email: str) -> dict:
+    """Call the A2A Data Masker (message/send) with the reply and the caller's own email. Raises on failure (K-1)."""
+    payload = {"jsonrpc": "2.0", "id": 1, "method": "message/send",
+               "params": {"message": {"role": "agent", "parts": [{"text": text}]},
+                          "metadata": {"user_email": own_email}}}
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(f"{MASKER_URL}/", json=payload)
+    resp.raise_for_status()
+    body = resp.json()
+    if "error" in body:
+        raise RuntimeError(body["error"].get("message", "masker error"))
+    result = body.get("result") or {}
+    if "masked" not in result or "detail" not in result:
+        raise ValueError(f"unparseable masker result: {body!r}")
+    return result
 
 
 def _decode(value):
@@ -151,9 +172,59 @@ async def run_turn(*, runner, user_email: str, session_id: str, message: str) ->
             yield _finish("blocked", "judge", None, BLOCKED_REPLY)
             return
 
+        # --- guardrail: in-process ADK agent; is this on-topic for THIS shop? (GR-1..GR-4) ---
+        yield {"type": "stage", "key": "guardrail", "label": "Guardrail"}
+        gr0 = time.monotonic()
+        gverdict, grerr = None, None
+        with tracer.start_as_current_span("guardrail.check") as grs:
+            grs.set_attribute(SpanAttributes.OPENINFERENCE_SPAN_KIND, _GUARDRAIL)
+            grs.set_attribute(SpanAttributes.INPUT_VALUE, message)
+            try:
+                gverdict = await guardrail_check(message)
+                grs.set_attribute(SpanAttributes.OUTPUT_VALUE, f"{gverdict['decision']}: {gverdict['reasoning']}")
+            except Exception as e:  # fail loud: an unparseable decision is an error, never a pass (GR-4, P-4)
+                grerr = f"{type(e).__name__}: {e}"
+                grs.record_exception(e)
+                grs.set_status(Status(StatusCode.ERROR, grerr))
+        grms = int((time.monotonic() - gr0) * 1000)
+        if grerr:
+            yield _finish("error", "guardrail", f"Guardrail unparseable or unreachable: {grerr}", "")
+            return
+        yield {"type": "step", "key": "guardrail", "status": "blocked" if gverdict["decision"] == "unsafe" else "passed",
+               "detail": f"{gverdict['decision']}: {gverdict['reasoning']}", "ms": grms,
+               "span": "guardrail.check", "kind": "in-process"}
+        if gverdict["decision"] == "unsafe":
+            yield _finish("blocked", "guardrail", None, OFFTOPIC_REPLY)
+            return
+
+        # --- recall: Mem0 search before the agent; a pipeline step, not a tool (R-1, R-2, R-5) ---
+        yield {"type": "stage", "key": "recall", "label": "Memory recall"}
+        rc0 = time.monotonic()
+        memories, rcerr = [], None
+        with tracer.start_as_current_span("memory.recall") as rcs:
+            rcs.set_attribute(SpanAttributes.OPENINFERENCE_SPAN_KIND, _RETRIEVER)
+            rcs.set_attribute(SpanAttributes.INPUT_VALUE, message)
+            try:
+                memories = memory.recall(user_email, message)
+                for i, m in enumerate(memories):
+                    rcs.set_attribute(f"retrieval.documents.{i}.document.content", m["memory"])
+                    rcs.set_attribute(f"retrieval.documents.{i}.document.score", m["score"])
+            except Exception as e:  # fail loud: a recall that cannot run ends the turn (P-4)
+                rcerr = f"{type(e).__name__}: {e}"
+                rcs.record_exception(e)
+                rcs.set_status(Status(StatusCode.ERROR, rcerr))
+        if rcerr:
+            yield _finish("error", "recall", f"Memory recall failed: {rcerr}", "")
+            return
+        inserted_n = sum(1 for m in memories if m["inserted"])
+        yield {"type": "step", "key": "recall", "status": "passed",
+               "detail": f"{inserted_n} inserted, {len(memories) - inserted_n} skipped of {len(memories)}",
+               "ms": int((time.monotonic() - rc0) * 1000), "span": "memory.recall", "kind": "Python fn",
+               "memories": memories}
+
         # --- agent ---
         yield {"type": "stage", "key": "agent", "label": "Support agent"}
-        content = types.Content(role="user", parts=[types.Part(text=message)])
+        content = types.Content(role="user", parts=[types.Part(text=memory.build_input(message, memories))])
         last = time.monotonic()
         async for ev in runner.run_async(user_id=user_email, session_id=session_id, new_message=content):
             now = time.monotonic()
@@ -198,6 +269,46 @@ async def run_turn(*, runner, user_email: str, session_id: str, message: str) ->
                 yield {"type": "llm", "model": MODEL, "decision": "final answer",
                        "tokens_in": ti, "tokens_out": to, "ms": int((now - last) * 1000), "span": "call_llm"}
             last = now
+
+        # --- mask: A2A Data Masker on the agent's reply; pure transform, never blocks (K-1..K-3) ---
+        yield {"type": "stage", "key": "mask", "label": "Data Masker"}
+        mk0 = time.monotonic()
+        mverdict, mkerr = None, None
+        with tracer.start_as_current_span("security.a2a_mask") as mks:
+            mks.set_attribute(SpanAttributes.OPENINFERENCE_SPAN_KIND, _GUARDRAIL)
+            mks.set_attribute(SpanAttributes.INPUT_VALUE, response_text)
+            try:
+                mverdict = await _ask_masker(response_text, user_email)
+                mks.set_attribute(SpanAttributes.OUTPUT_VALUE, mverdict["detail"])
+            except Exception as e:  # fail loud: an unreachable or unparseable Masker is an error (P-4)
+                mkerr = f"{type(e).__name__}: {e}"
+                mks.record_exception(e)
+                mks.set_status(Status(StatusCode.ERROR, mkerr))
+        if mkerr:
+            yield _finish("error", "mask", f"Data Masker unreachable or invalid: {mkerr}", "")
+            return
+        response_text = mverdict["masked"]
+        yield {"type": "step", "key": "mask", "status": "passed", "detail": mverdict["detail"],
+               "ms": int((time.monotonic() - mk0) * 1000), "span": "security.a2a_mask", "kind": "A2A"}
+
+        # --- save: store the user's own message after the Masker, non-blocked turn only (R-4) ---
+        yield {"type": "stage", "key": "save", "label": "Memory save"}
+        sv0 = time.monotonic()
+        sverr = None
+        with tracer.start_as_current_span("memory.save") as svs:
+            svs.set_attribute(SpanAttributes.OPENINFERENCE_SPAN_KIND, _TOOL)
+            svs.set_attribute(SpanAttributes.INPUT_VALUE, message)
+            try:
+                memory.save(user_email, message)
+            except Exception as e:  # fail loud: a save that cannot run ends the turn (P-4)
+                sverr = f"{type(e).__name__}: {e}"
+                svs.record_exception(e)
+                svs.set_status(Status(StatusCode.ERROR, sverr))
+        if sverr:
+            yield _finish("error", "save", f"Memory save failed: {sverr}", "")
+            return
+        yield {"type": "step", "key": "save", "status": "passed", "detail": "saved user message",
+               "ms": int((time.monotonic() - sv0) * 1000), "span": "memory.save", "kind": "Python fn"}
     except Exception as e:  # fail loud: an agent-side failure ends the turn as an error (R-4)
         span.record_exception(e)
         yield _finish("error", "agent", f"{type(e).__name__}: {e}", "")
