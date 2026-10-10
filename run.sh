@@ -42,6 +42,16 @@ SQL
     echo "reset done: tables dropped, recreated, seeded (EVALS §2)."
     ;;
 
+  toolbox)
+    # Start the MCP Toolbox server (Stage 2). Loads tools.yaml with env-substituted
+    # credentials. Override the launcher with TOOLBOX_CMD if npx can't find it.
+    set -a; . "$ROOT/.env"; set +a
+    TOOLBOX_CMD="${TOOLBOX_CMD:-npx -y @toolbox-sdk/server}"
+    TOOLBOX_PORT="${TOOLBOX_PORT:-5050}"   # 5000 is taken by macOS AirPlay Receiver
+    exec $TOOLBOX_CMD --config "$ROOT/mcp_toolbox/tools.yaml" --enable-api \
+      --address 127.0.0.1 --port "$TOOLBOX_PORT"
+    ;;
+
   status)
     echo "db $DB_NAME @ $DB_HOST:$DB_PORT"
     pg_isready -d "$DB_NAME" || true
@@ -49,6 +59,6 @@ SQL
     ;;
 
   help|*)
-    echo "usage: ./run.sh {setup|reset|status}"
+    echo "usage: ./run.sh {setup|reset|toolbox|status}"
     ;;
 esac

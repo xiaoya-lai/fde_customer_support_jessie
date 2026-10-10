@@ -1,0 +1,94 @@
+# mcp_toolbox/tools.yaml — Stage 2 (M-2, M-3, M-4, M-6, M-7, M-8)
+# Database access lives ONLY here. No SQL in Python. Secrets come from the
+# environment (${...}), never hard-coded, so nothing sensitive is in the repo.
+
+sources:
+  support-pg:
+    kind: postgres
+    host: ${POSTGRES_HOST}
+    port: ${POSTGRES_PORT}
+    database: ${POSTGRES_DB}
+    user: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
+
+tools:
+  # M-4: ownership is in the SQL. customer_email is a parameter here, but at load
+  # time (Stage 3) toolbox-core BINDS it to the logged-in session, so the model
+  # cannot choose it (M-5). The WHERE clause makes "someone else's order" return
+  # zero rows at the database, not at the prompt (R-1).
+  get-order-status:
+    kind: postgres-sql
+    source: support-pg
+    description: >
+      Look up the status of ONE of the current customer's orders by its order id.
+      Returns nothing if the order does not belong to this customer.
+    parameters:
+      - name: order_id
+        type: integer
+        description: The order id to look up.
+      - name: customer_email
+        type: string
+        description: Bound from the logged-in session. Do not supply this yourself.
+    statement: |
+      SELECT order_id, status, items, order_date, total_amount
+      FROM customer_orders
+      WHERE order_id = $1 AND customer_email = $2;
+
+  # M-3: history, newest first. Same ownership filter (M-4).
+  find-customer-orders:
+    kind: postgres-sql
+    source: support-pg
+    description: >
+      List ALL of the current customer's orders, newest first. Use when the
+      customer asks about their orders in general or you need to find one.
+    parameters:
+      - name: customer_email
+        type: string
+        description: Bound from the logged-in session. Do not supply this yourself.
+    statement: |
+      SELECT order_id, status, items, order_date, total_amount
+      FROM customer_orders
+      WHERE customer_email = $1
+      ORDER BY order_date DESC;
+
+  # M-7: action_type must be one of the enum (also enforced by the DB CHECK).
+  # M-8: INSERT ... SELECT ... WHERE rejects an order_id the user does not own:
+  # the row is written only if parameters has no order_id, or the order_id
+  # belongs to user_email. A rejected action returns zero rows.
+  action-log:
+    kind: postgres-sql
+    source: support-pg
+    description: >
+      Record a requested change the customer asked for. This does NOT change the
+      order; a downstream system acts on it later. action_type MUST be one of:
+      CANCEL_ORDER, RETURN_ORDER, UPDATE_ADDRESS, UPDATE_PREFERENCE, UPDATE_PROFILE.
+      parameters is a JSON object string and MUST include "order_id" when an order
+      is involved.
+    parameters:
+      - name: user_email
+        type: string
+        description: Bound from the logged-in session. Do not supply this yourself.
+      - name: action_type
+        type: string
+        description: One of CANCEL_ORDER, RETURN_ORDER, UPDATE_ADDRESS, UPDATE_PREFERENCE, UPDATE_PROFILE.
+      - name: parameters
+        type: string
+        description: 'A JSON object as a string, for example {"order_id": 4}. Include order_id when an order is involved.'
+    statement: |
+      INSERT INTO actions_log (user_email, action_type, parameters)
+      SELECT $1, $2, $3::jsonb
+      WHERE NOT ($3::jsonb ? 'order_id')
+         OR EXISTS (
+              SELECT 1 FROM customer_orders
+              WHERE order_id = ($3::jsonb->>'order_id')::int
+                AND customer_email = $1
+            )
+      RETURNING id, action_type, parameters;
+
+# M-6 (red line): the agent loads ONLY this toolset. It contains no tool that can
+# modify customer_orders. There is no such tool declared anywhere in this file.
+toolsets:
+  support-agent:
+    - get-order-status
+    - find-customer-orders
+    - action-log

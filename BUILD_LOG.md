@@ -79,9 +79,15 @@ DETAIL:  Failing row contains (1, 2026-10-09 21:39:45.114109-07, x, RETURN_ITEM
 
 ## Stage 2: the tools, and where access control lives
 
-- **Before reading SPEC R-1, I thought ownership belonged in:**
-- **I decided:**
+- **Before reading SPEC R-1, I thought ownership belonged in:**  Before reading, I thought it was controled on prompt level, but after reading R-1, I now know it should sit in SQL.
+- **I decided: to go with SQL after reading R-1.**
 - **What happened (order 5 as alice):**
+
+{"result":"[{\"order_id\":3,\"status\":\"SHIPPED\",\"items\":[{\"price\":120,\"product\":\"Mechanical Keyboard\",\"qty\":1}],\"order_date\":\"2026-10-07T21:36:30.359685-07:00\",\"total_amount\":120.00}]"}
+
+
+
+{"result":"[]"}
 
 
 
