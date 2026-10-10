@@ -12,6 +12,25 @@ sources:
     password: ${POSTGRES_PASSWORD}
 
 tools:
+  # Login only. Verifies a seeded email+password (SPEC §8: plain-text demo passwords)
+  # and returns the display name — never the password. Kept OUT of the support-agent
+  # toolset below, so the model can never call it; the CLI/web login flow does (M-2).
+  verify-login:
+    kind: postgres-sql
+    source: support-pg
+    description: Internal login check; not for the agent.
+    parameters:
+      - name: email
+        type: string
+        description: The email the person typed at login.
+      - name: password
+        type: string
+        description: The password the person typed at login.
+    statement: |
+      SELECT email, full_name, is_premium_customer
+      FROM users
+      WHERE email = $1 AND password = $2;
+
   # M-4: ownership is in the SQL. customer_email is a parameter here, but at load
   # time (Stage 3) toolbox-core BINDS it to the logged-in session, so the model
   # cannot choose it (M-5). The WHERE clause makes "someone else's order" return

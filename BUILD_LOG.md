@@ -93,11 +93,15 @@ DETAIL:  Failing row contains (1, 2026-10-09 21:39:45.114109-07, x, RETURN_ITEM
 
 ## Stage 3: the agent, and a bare CLI
 
-- **I decided (tools loaded, how the email is bound):**
-- **I predicted the "order 5 for bob" request would:**
+- **I decided (tools loaded, how the email is bound):** I prefer bind to a callable function which looks neat. 
+- **I predicted the "order 5 for bob" request would: would call Bob's email.** 
 - **What happened:**
 
+Bot: Order 3, which includes a Mechanical Keyboard, was shipped on October 7, 2026. 
 
+Bot: I'm sorry, but I can't find order 5 on your account. 
+
+Bot: I can only look up orders for your account, and I'm unable to find order 5 associated with it. I don't have the ability to access other accounts or look up information using an email address. 
 
 ## Stage 4: the pipeline and its events
 
