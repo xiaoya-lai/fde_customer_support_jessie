@@ -1,22 +1,24 @@
-"""support/cli.py — Stage 3 (throwaway CLI).
+"""support/cli.py — Stage 4 (C-3).
 
-A bare login-and-chat loop: it verifies credentials against the users table through
-the Toolbox verify-login tool (so no SQL lives in Python, M-2), binds the session
-email to the agent's tools via a callable (M-5), and runs one ADK session per
-logged-in user. Stage 4 replaces this with the pipeline + event renderer.
+A thin front end: it logs in, then for each message drives support.pipeline.run_turn
+and only renders the events it yields (P-1). --events prints the raw §7.1 NDJSON
+with no rendering (for jq and the eval runner); otherwise it prints the symbol+compact
+human lines. --user <email> is a local/eval shortcut that skips the password prompt.
 """
+import argparse
 import asyncio
 import getpass
 import json
 import os
+import sys
 
 from dotenv import load_dotenv
 from toolbox_core import ToolboxClient
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
-from google.genai import types
 
-from support.agent import build_agent, current_email, set_session_email
+from support.agent import build_agent, current_email
+from support.pipeline import run_turn
 
 load_dotenv()
 TOOLBOX_URL = os.environ.get("TOOLBOX_URL", "http://127.0.0.1:5050")
@@ -24,14 +26,39 @@ APP = "support"
 
 
 def _rows(result):
-    """Normalize a Toolbox result (JSON string of an object or array) to a list of rows."""
     data = json.loads(result) if isinstance(result, str) else result
     if isinstance(data, dict):
         return [data]
     return data or []
 
 
+def _render(ev: dict) -> None:
+    t = ev["type"]
+    if t == "trace":
+        print(f"  turn {ev['turn_id']}")
+    elif t == "stage":
+        print(f"» {ev['label']}")
+    elif t == "llm":
+        print(f"→ llm         {ev['decision']}   ({ev['ms']}ms, {ev['tokens_out']} tok)")
+    elif t == "tool_call":
+        args = ", ".join(f"{k}={v}" for k, v in ev["args"].items())
+        print(f"→ tool        {ev['name']}  {{{args}}}")
+    elif t == "tool_result":
+        mark = "✓" if ev["ok"] else "✗"
+        n = len(ev["result"]) if isinstance(ev["result"], list) else 1
+        print(f"{mark} tool        {ev['name']}  {n} row(s)   {ev['ms']}ms")
+    elif t == "final":
+        print(f"\nBot: {ev['response']}\n")
+    elif t == "error":
+        print(f"✗ error       [{ev['step']}] {ev['error']}")
+
+
 async def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--user", help="log in as this email without a password (local/eval only)")
+    ap.add_argument("--events", action="store_true", help="print raw §7.1 NDJSON, no rendering")
+    args = ap.parse_args()
+
     async with ToolboxClient(TOOLBOX_URL) as toolbox:
         login_tool = await toolbox.load_tool("verify-login")
         tools = await toolbox.load_toolset(
@@ -40,30 +67,41 @@ async def main() -> None:
             strict=False,
         )
 
-        email = input("email: ").strip()
-        password = getpass.getpass("password: ")
-        rows = _rows(await login_tool(email=email, password=password))
-        if not rows:
-            print("Invalid email or password.")
-            return
-        set_session_email(email)
-        print(f"Logged in as {rows[0].get('full_name') or email}. Type 'quit' to exit.\n")
+        if args.user:
+            email = args.user
+        else:
+            email = input("email: ").strip()
+            password = getpass.getpass("password: ")
+            if not _rows(await login_tool(email=email, password=password)):
+                print("Invalid email or password.")
+                return
+            if not args.events:
+                print(f"Logged in as {email}. Type 'quit' to exit.\n")
 
         agent = build_agent(tools)
         sessions = InMemorySessionService()
         await sessions.create_session(app_name=APP, user_id=email, session_id=email)
         runner = Runner(agent=agent, app_name=APP, session_service=sessions)
 
-        while True:
-            msg = input("You: ").strip()
-            if msg.lower() in {"quit", "exit", "q"}:
-                break
-            if not msg:
-                continue
-            content = types.Content(role="user", parts=[types.Part(text=msg)])
-            async for event in runner.run_async(user_id=email, session_id=email, new_message=content):
-                if event.is_final_response() and event.content and event.content.parts:
-                    print("Bot:", event.content.parts[0].text, "\n")
+        async def handle(msg: str) -> None:
+            async for ev in run_turn(runner=runner, user_email=email, session_id=email, message=msg):
+                print(json.dumps(ev), flush=True) if args.events else _render(ev)
+
+        if not sys.stdin.isatty():
+            for line in sys.stdin:
+                line = line.strip()
+                if line:
+                    await handle(line)
+        else:
+            while True:
+                try:
+                    msg = input("You: ").strip()
+                except EOFError:
+                    break
+                if msg.lower() in {"quit", "exit", "q"}:
+                    break
+                if msg:
+                    await handle(msg)
 
 
 if __name__ == "__main__":

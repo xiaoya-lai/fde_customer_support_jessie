@@ -105,11 +105,70 @@ Bot: I can only look up orders for your account, and I'm unable to find order 5 
 
 ## Stage 4: the pipeline and its events
 
-- **My hand-sketched CLI lines:**
-- **I predicted the first event after the agent stage would be:**
+- **My hand-sketched CLI lines:** I chose a symbol + compact, so it's likely to be 
+- ✓ sanitize clean 10chars 1ms
+- ✓ judge allow 100chars 2ms
+- → tool get-order-status null 0.1ms
+- ✗ guardrail blocked off-topic 1000ms
+- ✓ recall 3 memories 2 skipped
+- **I predicted the first event after the agent stage would be: I think the first event should be calling the get order status MCP.**
 - **What happened:**
 
+**{"type":**"llm"**,"name":**null**,"key":**null**}**
 
+**{"type":**"tool_call"**,"name":**"get-order-status"**,"key":**null**}**
+
+**{"type":**"tool_result"**,"name":**"get-order-status"**,"key":**null**}**
+
+**{"type":**"llm"**,"name":**null**,"key":**null**}**
+
+**{"type":**"final"**,"name":**null**,"key":**null**}**
+
+
+
+{
+
+  "turn_id": "turn_e8b6cfa4e16d420d836a00d7374a8ca0",
+
+  "trace_id": "00000000000000000000000000000000",
+
+  "user": "[alice.jones@example.com](mailto:alice.jones@example.com)",
+
+  "message": "What is the status of order 3?",
+
+  "terminated": "done",
+
+  "blocked_at": null,
+
+  "wall_clock_ms": 3362,
+
+  "tokens": {
+
+    "in": 1368,
+
+    "out": 60
+
+  },
+
+  "steps": [],
+
+  "tool_calls": [
+
+    {
+
+      "name": "get-order-status",
+
+      "ok": true,
+
+      "ms": 3
+
+    }
+
+  ],
+
+  "llm_calls": 2
+
+}**%**   
 
 ## Stage 5: one trace per turn
 
