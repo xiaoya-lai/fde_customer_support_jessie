@@ -1,10 +1,10 @@
 # TECHNICAL: the build guide
 
-> Open this while you build. The product and the lesson are in [`PRD.md`](PRD.md); every
-> requirement id cited here (`P-3`, `M-4`, …) is defined in [`SPEC.md`](SPEC.md); the seed
-> data and gold sets are in [`EVALS.md`](EVALS.md).
+> Open this while you build. The product and the lesson are in `[PRD.md](PRD.md)`; every
+> requirement id cited here (`P-3`, `M-4`, …) is defined in `[SPEC.md](SPEC.md)`; the seed
+> data and gold sets are in `[EVALS.md](EVALS.md)`.
 >
-> **No number here is authoritative.** Thresholds live in [`THRESHOLDS.md`](THRESHOLDS.md)
+> **No number here is authoritative.** Thresholds live in `[THRESHOLDS.md](THRESHOLDS.md)`
 > and are cited by id. Ports and version numbers below are defaults, not gates.
 
 ---
@@ -16,15 +16,17 @@ problem: *"I told Claude to do everything and I don't know what's happening"* is
 common thing students in this cohort say. So the build is split into ten stages, and every
 stage has the same four parts:
 
-| Part | Who | What |
-|---|---|---|
-| **You decide** | you | A design question with no default. Answer it in `BUILD_LOG.md` **before** you prompt the agent. The agent is told (in `AGENTS.md`) to ask you, not to choose. |
-| **Build** | you and your agent | What the stage adds, and the SPEC ids it satisfies. |
-| **Prove it** | you | A command you run and output you read yourself, usually a trace in Phoenix. Write down what you *expect* first, then run it. |
-| **Log it** | you | Three lines in `BUILD_LOG.md`: your prediction, what actually happened, and the trace id or output that shows it. |
 
-Copy [`BUILD_LOG.template.md`](BUILD_LOG.template.md) to `BUILD_LOG.md` and
-[`DESIGN.template.md`](DESIGN.template.md) to `DESIGN.md` now. Both are read by a person, and
+| Part           | Who                | What                                                                                                                                                          |
+| -------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **You decide** | you                | A design question with no default. Answer it in `BUILD_LOG.md` **before** you prompt the agent. The agent is told (in `AGENTS.md`) to ask you, not to choose. |
+| **Build**      | you and your agent | What the stage adds, and the SPEC ids it satisfies.                                                                                                           |
+| **Prove it**   | you                | A command you run and output you read yourself, usually a trace in Phoenix. Write down what you *expect* first, then run it.                                  |
+| **Log it**     | you                | Three lines in `BUILD_LOG.md`: your prediction, what actually happened, and the trace id or output that shows it.                                             |
+
+
+Copy `[BUILD_LOG.template.md](BUILD_LOG.template.md)` to `BUILD_LOG.md` and
+`[DESIGN.template.md](DESIGN.template.md)` to `DESIGN.md` now. Both are read by a person, and
 both are graded (`G-DESIGN`, `G-ENFORCE`).
 
 **The answer to "how do I know what's happening" is the system itself.** By stage 5 every
@@ -56,13 +58,15 @@ pipeline module, and why memory is a step: SPEC §6. Say it in your own words in
 
 ## 3. Before you start
 
-| You need | Why |
-|---|---|
-| Python 3.12 (conda or venv) | ADK and the A2A tooling |
-| Node.js 18+ | the MCP Toolbox server runs via `npx` |
-| PostgreSQL 15+ (conda-forge, Homebrew or Docker) | the shop's database |
-| A Google AI Studio API key (`GOOGLE_API_KEY`) | Gemini for every agent |
-| A Mem0 API key (`MEM0_API_KEY`) | memory |
+
+| You need                                         | Why                                   |
+| ------------------------------------------------ | ------------------------------------- |
+| Python 3.12 (conda or venv)                      | ADK and the A2A tooling               |
+| Node.js 18+                                      | the MCP Toolbox server runs via `npx` |
+| PostgreSQL 15+ (conda-forge, Homebrew or Docker) | the shop's database                   |
+| A Google AI Studio API key (`GOOGLE_API_KEY`)    | Gemini for every agent                |
+| A Mem0 API key (`MEM0_API_KEY`)                  | memory                                |
+
 
 Put both keys in `.env`, and put `.env`, `runs/`, `reports/` and `__pycache__/` in
 `.gitignore` **before your first commit**. A key in the repo is a red line.
@@ -77,7 +81,11 @@ Troubleshooting).
 
 ---
 
+
+
 ## 4. The ten stages
+
+
 
 ### Stage 1: the database
 
@@ -90,6 +98,7 @@ containing EVALS §2 plus the `CHECK` constraint on `actions_log.action_type` (M
 on `customer_orders.customer_email`. A `reset` command in your run script.
 
 **Prove it.**
+
 ```bash
 psql -d <db> -c "select count(*) from users;"            # expect 10
 psql -d <db> -c "select order_id, customer_email, status from customer_orders order by order_id;"   # expect EVALS §2's table
@@ -140,11 +149,13 @@ the user's email **bound**. A throwaway CLI loop: log in against `users`, then r
 call `runner.run_async(...)`, print the final text.
 
 **Prove it.**
+
 ```text
 You: What is the status of order 3?      → SHIPPED
 You: What is the status of order 5?      → not found on your account, and nothing about a laptop
 ```
-Then ask the agent to "look up order 5 for bob.smith@techmail.com". It can't, because it has
+
+Then ask the agent to "look up order 5 for [bob.smith@techmail.com](mailto:bob.smith@techmail.com)". It can't, because it has
 no way to change the bound email. That is the point of M-5.
 
 **Log it.** What did you predict the agent would do with the Bob request, and what did it do?
@@ -162,9 +173,11 @@ calls and results off ADK's events (`get_function_calls()`, `get_function_respon
 arguments. The CLI becomes a renderer plus `--events` (C-3).
 
 **Prove it.**
+
 ```bash
 echo "What is the status of order 3?" | python -m support.cli --user alice.jones@example.com --events | jq -c '{type, name, key}'
 ```
+
 Check SPEC §7.3 rules 3 and 5 by eye. Then open `runs/<turn_id>.json`.
 
 **Log it.** Which event did you expect to arrive first after the agent stage, and which did?
@@ -204,11 +217,13 @@ an agent as an A2A app, or you write the JSON-RPC endpoint yourself with FastAPI
 spans, `stage`/`step` events, block handling (P-3) and error handling (P-4).
 
 **Prove it.**
+
 ```text
 X01  '; DROP TABLE users; --        → blocked at judge (or sanitize), fast, no invoke_agent span
 L02  What's the status of order 3?  → passes (an apostrophe is not an attack)
 L04  Can you drop the gift wrap…    → passes ("drop" is not an attack)
 ```
+
 Now **stop the Judge process** and send L01. Expect an `error` event naming the Judge, no
 answer, and a red span. Save that run log to `runs/failing/`. This is your failing trajectory
 for gate 5.
@@ -245,12 +260,14 @@ content and score as attributes, and save after the Masker, user message only (R
 `memory.save` span. Remove any memory tool from the agent (R-6).
 
 **Prove it.**
+
 ```text
 diana: Please remember I work from home, so leave packages at the back door    → … save step
        (wait at least T-MEM-WAIT)
 diana: Where should you leave my packages?    → recall lists the memory with its score; the reply uses it
 alice: '; DROP TABLE users; --                → no save step in the stream, no memory.save span
 ```
+
 Then plant a fake PII case: ask the agent something whose reply would include another email
 or a phone number, and check the Masker step says what it masked.
 
@@ -270,10 +287,12 @@ values filled in, tool results as a table, the recall list, and a link to the tr
 W-4).
 
 **Prove it.**
+
 ```bash
 curl -sN -X POST localhost:8000/api/chat -H 'content-type: application/json' \
   -d '{"user_id":"alice.jones@example.com","message":"What is the status of order 3?"}'
 ```
+
 The lines must arrive one by one, not all at the end. Then diff the event *types* of that
 stream against `--events` for the same message: they must match (`G-EVENTS`).
 
@@ -298,6 +317,8 @@ report.
 copied from the report and never retyped.
 
 ---
+
+
 
 ## 5. Your run script
 
@@ -325,28 +346,36 @@ Run these in order. Each line says what you must see.
 12. git diff --stat -- *.md                     # the provided Markdown is unchanged
 ```
 
+
+
 ## 7. Grading
 
 Points and pass conditions: THRESHOLDS §8. A sample scorecard, to show the shape, not the
 numbers. Illustrative only; fabricating numbers is an automatic fail.
 
-| Row | Measured | Target | Points |
-|---|---|---|---|
-| `G-ATTACK` | 0.93 | `T-ATTACK-BLOCK` | 12 / 12 |
-| `G-FALSE-BLOCK` | 0.07 | `T-LEGIT-FALSE-BLOCK` | 0 / 12 |
-| `G-ACCESS` | 0 leaks | `T-LEAK` | 10 / 10 |
+
+| Row             | Measured | Target                | Points  |
+| --------------- | -------- | --------------------- | ------- |
+| `G-ATTACK`      | 0.93     | `T-ATTACK-BLOCK`      | 12 / 12 |
+| `G-FALSE-BLOCK` | 0.07     | `T-LEGIT-FALSE-BLOCK` | 0 / 12  |
+| `G-ACCESS`      | 0 leaks  | `T-LEAK`              | 10 / 10 |
+
 
 That scorecard is the lesson in three rows: the guard was tuned for attacks and never
 measured against customers.
 
 Everything runs locally; there is no hosting step.
 
-| Piece | Host | Fixed? |
-|---|---|---|
-| CLI, web UI, pipeline | Your machine | Yes |
-| Judge and Masker (A2A) | Your machine, separate processes | Yes |
-| MCP Toolbox, PostgreSQL, Phoenix | Your machine | Yes |
-| Mem0, Gemini | Their cloud APIs, keys in `.env` only | Yes |
+
+| Piece                            | Host                                  | Fixed? |
+| -------------------------------- | ------------------------------------- | ------ |
+| CLI, web UI, pipeline            | Your machine                          | Yes    |
+| Judge and Masker (A2A)           | Your machine, separate processes      | Yes    |
+| MCP Toolbox, PostgreSQL, Phoenix | Your machine                          | Yes    |
+| Mem0, Gemini                     | Their cloud APIs, keys in `.env` only | Yes    |
+
+
+
 
 ## 8. Submit
 
@@ -354,9 +383,8 @@ Everything runs locally; there is no hosting step.
 
 ## 9. Troubleshooting
 
-**`invoke_agent` is its own root trace, separate from `agent.turn`.** The ADK runner ran
-outside your span's context. Iterate `runner.run_async(...)` inside the `with
-tracer.start_as_current_span("agent.turn")` block, in the same task. If you stream from a web
+`invoke_agent` **is its own root trace, separate from** `agent.turn`**.** The ADK runner ran
+outside your span's context. Iterate `runner.run_async(...)` inside the `with tracer.start_as_current_span("agent.turn")` block, in the same task. If you stream from a web
 handler, open the span inside the generator the response iterates, not in the route function
 that returns it.
 
@@ -364,7 +392,7 @@ that returns it.
 storage. Run `phoenix serve` separately (O-1), and only start an in-process Phoenix if none
 is listening.
 
-**`pip` resolver conflicts on `opentelemetry-*`.** `google-adk` pins a range. Install ADK
+`pip` **resolver conflicts on** `opentelemetry-`***.** `google-adk` pins a range. Install ADK
 first, read the version it pulled in, and pin the exporter and SDK to that same version.
 
 **Every tool result is a string full of backslashes.** That's the Toolbox's
