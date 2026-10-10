@@ -52,6 +52,14 @@ SQL
       --address 127.0.0.1 --port "$TOOLBOX_PORT"
     ;;
 
+  phoenix)
+    # Start Phoenix as its own long-lived process with on-disk storage, so traces
+    # survive a CLI/agent restart (O-1). Leave this running in its own terminal.
+    export PHOENIX_WORKING_DIR="${PHOENIX_WORKING_DIR:-$ROOT/.phoenix}"
+    mkdir -p "$PHOENIX_WORKING_DIR"
+    exec "$ROOT/.venv/bin/phoenix" serve
+    ;;
+
   status)
     echo "db $DB_NAME @ $DB_HOST:$DB_PORT"
     pg_isready -d "$DB_NAME" || true
@@ -59,6 +67,6 @@ SQL
     ;;
 
   help|*)
-    echo "usage: ./run.sh {setup|reset|toolbox|status}"
+    echo "usage: ./run.sh {setup|reset|toolbox|phoenix|status}"
     ;;
 esac

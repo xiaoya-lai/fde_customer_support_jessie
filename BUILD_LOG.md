@@ -172,9 +172,9 @@ Bot: I can only look up orders for your account, and I'm unable to find order 5 
 
 ## Stage 5: one trace per turn
 
-- **I decided (what goes in span attributes, who can see Phoenix):**
-- **Trace id:**
-- **One thing the trace showed that the reply didn't:**
+- **I decided (what goes in span attributes, who can see Phoenix): I prefer record them verbatim (full message + full reply). But only I can see it.**
+- **Trace id:9f58115081c46eb06c4225fe94b2c398**
+- **One thing the trace showed that the reply didn't:** The LLM was called twice!!
 
 
 

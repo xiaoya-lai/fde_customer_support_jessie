@@ -17,6 +17,7 @@ from toolbox_core import ToolboxClient
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 
+from support import telemetry
 from support.agent import build_agent, current_email
 from support.pipeline import run_turn
 
@@ -35,7 +36,7 @@ def _rows(result):
 def _render(ev: dict) -> None:
     t = ev["type"]
     if t == "trace":
-        print(f"  turn {ev['turn_id']}")
+        print(f"  turn {ev['turn_id']}  ·  trace {ev['url']}")
     elif t == "stage":
         print(f"» {ev['label']}")
     elif t == "llm":
@@ -58,6 +59,8 @@ async def main() -> None:
     ap.add_argument("--user", help="log in as this email without a password (local/eval only)")
     ap.add_argument("--events", action="store_true", help="print raw §7.1 NDJSON, no rendering")
     args = ap.parse_args()
+
+    telemetry.setup()  # install the global TracerProvider before any agent is built (O-2)
 
     async with ToolboxClient(TOOLBOX_URL) as toolbox:
         login_tool = await toolbox.load_tool("verify-login")
