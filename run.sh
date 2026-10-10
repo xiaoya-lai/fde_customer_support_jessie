@@ -52,6 +52,14 @@ SQL
       --address 127.0.0.1 --port "$TOOLBOX_PORT"
     ;;
 
+  judge)
+    # Start the A2A Security Judge as its own process on its own port (J-1).
+    set -a; . "$ROOT/.env"; set +a
+    export JUDGE_PORT="${JUDGE_PORT:-10002}"
+    export PYTHONPATH="$ROOT:${PYTHONPATH:-}"
+    exec "$ROOT/.venv/bin/uvicorn" guards.judge.server:app --host 127.0.0.1 --port "$JUDGE_PORT"
+    ;;
+
   phoenix)
     # Start Phoenix as its own long-lived process with on-disk storage, so traces
     # survive a CLI/agent restart (O-1). Leave this running in its own terminal.
@@ -67,6 +75,6 @@ SQL
     ;;
 
   help|*)
-    echo "usage: ./run.sh {setup|reset|toolbox|phoenix|status}"
+    echo "usage: ./run.sh {setup|reset|toolbox|judge|phoenix|status}"
     ;;
 esac

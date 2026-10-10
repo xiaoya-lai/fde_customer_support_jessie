@@ -8,21 +8,44 @@ It writes runs/<turn_id>.json (EVALS §4.1) before the terminal event. The guard
 stages (sanitize…save) arrive in later stages.
 """
 import json
+import os
 import time
 import uuid
 from pathlib import Path
 from typing import AsyncIterator
 
+import httpx
 from google.genai import types
 from openinference.semconv.trace import OpenInferenceSpanKindValues, SpanAttributes
 from opentelemetry import context as context_api
 from opentelemetry import trace as otel_trace
 from opentelemetry.trace import Status, StatusCode
 
+from guards.sanitizer import sanitize
 from support import telemetry
 from support.agent import MODEL, set_session_email
 
 RUNS_DIR = Path(__file__).resolve().parent.parent / "runs"
+JUDGE_URL = os.environ.get("JUDGE_URL", "http://localhost:10002")
+_CHAIN = OpenInferenceSpanKindValues.CHAIN.value
+_GUARDRAIL = OpenInferenceSpanKindValues.GUARDRAIL.value
+BLOCKED_REPLY = "Sorry — I can't help with that request."
+
+
+async def _ask_judge(message: str) -> dict:
+    """Call the A2A Security Judge over JSON-RPC (message/send). Raises on any failure (J-4)."""
+    payload = {"jsonrpc": "2.0", "id": 1, "method": "message/send",
+               "params": {"message": {"role": "user", "parts": [{"text": message}]}}}
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(f"{JUDGE_URL}/", json=payload)
+    resp.raise_for_status()
+    body = resp.json()
+    if "error" in body:
+        raise RuntimeError(body["error"].get("message", "judge error"))
+    result = body.get("result") or {}
+    if result.get("verdict") not in ("allow", "block"):
+        raise ValueError(f"unparseable judge verdict: {body!r}")
+    return {"verdict": result["verdict"], "reason": result.get("reason", "")}
 
 
 def _decode(value):
@@ -50,7 +73,7 @@ async def run_turn(*, runner, user_email: str, session_id: str, message: str) ->
     # Open the root span and make it current, so ADK's auto-spans nest under it (O-2).
     tracer = telemetry.setup()
     span = tracer.start_span("agent.turn")
-    span.set_attribute(SpanAttributes.OPENINFERENCE_SPAN_KIND, OpenInferenceSpanKindValues.CHAIN.value)
+    span.set_attribute(SpanAttributes.OPENINFERENCE_SPAN_KIND, _CHAIN)
     span.set_attribute(SpanAttributes.INPUT_VALUE, message)
     span.set_attribute(SpanAttributes.USER_ID, user_email)
     ctx_token = context_api.attach(otel_trace.set_span_in_context(span))
@@ -61,13 +84,75 @@ async def run_turn(*, runner, user_email: str, session_id: str, message: str) ->
     pending: dict[str, list[tuple[int, float]]] = {}
     next_id = 1
     response_text = ""
-    terminated, err = "done", None
+
+    def _finish(terminated: str, blocked_at, err, response: str) -> dict:
+        # One teardown for every exit (done / blocked / error): record the outcome on the
+        # root span, write runs/<turn_id>.json (EVALS §4.1), close + ship the span, and
+        # return the single terminal event. No save runs on a blocked/error turn (P-3).
+        wall = int((time.monotonic() - t0) * 1000)
+        span.set_attribute(SpanAttributes.OUTPUT_VALUE, err or response or "")
+        if terminated == "error":
+            span.set_status(Status(StatusCode.ERROR, err))
+        _write_run({"turn_id": turn_id, "trace_id": trace_id, "user": user_email,
+                    "message": message, "terminated": terminated, "blocked_at": blocked_at,
+                    "wall_clock_ms": wall, "tokens": {"in": tokens_in, "out": tokens_out},
+                    "steps": [], "tool_calls": tool_calls_log, "llm_calls": llm_calls})
+        context_api.detach(ctx_token)
+        span.end()
+        telemetry.flush()
+        if terminated == "error":
+            return {"type": "error", "step": blocked_at or "agent", "status": 502,
+                    "error": err, "terminated": "error"}
+        return {"type": "final", "blocked": terminated == "blocked", "blocked_at": blocked_at,
+                "response": response, "terminated": terminated,
+                "wall_clock_ms": wall, "tokens": {"in": tokens_in, "out": tokens_out}}
 
     try:
         yield {"type": "trace", "turn_id": turn_id, "trace_id": trace_id,
                "url": telemetry.trace_url(trace_id)}
-        yield {"type": "stage", "key": "agent", "label": "Support agent"}
 
+        # --- sanitize: in-process allow-list, no model call (S-1, S-2) ---
+        yield {"type": "stage", "key": "sanitize", "label": "Sanitizer"}
+        g0 = time.monotonic()
+        with tracer.start_as_current_span("security.sanitize") as gs:
+            gs.set_attribute(SpanAttributes.OPENINFERENCE_SPAN_KIND, _GUARDRAIL)
+            gs.set_attribute(SpanAttributes.INPUT_VALUE, message)
+            verdict = sanitize(message)
+            gs.set_attribute(SpanAttributes.OUTPUT_VALUE, verdict.detail)
+        yield {"type": "step", "key": "sanitize", "status": "passed" if verdict.ok else "blocked",
+               "detail": verdict.detail, "ms": int((time.monotonic() - g0) * 1000),
+               "span": "security.sanitize", "kind": "in-process"}
+        if not verdict.ok:
+            yield _finish("blocked", "sanitize", None, BLOCKED_REPLY)
+            return
+
+        # --- judge: A2A Security Judge; patterns-first, either side may block (J-1..J-4) ---
+        yield {"type": "stage", "key": "judge", "label": "A2A Security Judge"}
+        j0 = time.monotonic()
+        jverdict, jerr = None, None
+        with tracer.start_as_current_span("security.a2a_judge") as js:
+            js.set_attribute(SpanAttributes.OPENINFERENCE_SPAN_KIND, _GUARDRAIL)
+            js.set_attribute(SpanAttributes.INPUT_VALUE, message)
+            try:
+                jverdict = await _ask_judge(message)
+                js.set_attribute(SpanAttributes.OUTPUT_VALUE, f"{jverdict['verdict']}: {jverdict['reason']}")
+            except Exception as e:  # fail loud: an unreachable or unparseable Judge is an error (P-4, J-4)
+                jerr = f"{type(e).__name__}: {e}"
+                js.record_exception(e)
+                js.set_status(Status(StatusCode.ERROR, jerr))
+        jms = int((time.monotonic() - j0) * 1000)
+        if jerr:
+            yield _finish("error", "judge", f"Security Judge unreachable or invalid: {jerr}", "")
+            return
+        yield {"type": "step", "key": "judge", "status": "blocked" if jverdict["verdict"] == "block" else "passed",
+               "detail": f"{jverdict['verdict']}: {jverdict['reason']}", "ms": jms,
+               "span": "security.a2a_judge", "kind": "A2A"}
+        if jverdict["verdict"] == "block":
+            yield _finish("blocked", "judge", None, BLOCKED_REPLY)
+            return
+
+        # --- agent ---
+        yield {"type": "stage", "key": "agent", "label": "Support agent"}
         content = types.Content(role="user", parts=[types.Part(text=message)])
         last = time.monotonic()
         async for ev in runner.run_async(user_id=user_email, session_id=session_id, new_message=content):
@@ -114,24 +199,8 @@ async def run_turn(*, runner, user_email: str, session_id: str, message: str) ->
                        "tokens_in": ti, "tokens_out": to, "ms": int((now - last) * 1000), "span": "call_llm"}
             last = now
     except Exception as e:  # fail loud: an agent-side failure ends the turn as an error (R-4)
-        terminated, err = "error", f"{type(e).__name__}: {e}"
         span.record_exception(e)
-        span.set_status(Status(StatusCode.ERROR, err))
+        yield _finish("error", "agent", f"{type(e).__name__}: {e}", "")
+        return
 
-    wall = int((time.monotonic() - t0) * 1000)
-    span.set_attribute(SpanAttributes.OUTPUT_VALUE, err if terminated == "error" else response_text)
-    _write_run({"turn_id": turn_id, "trace_id": trace_id, "user": user_email, "message": message,
-                "terminated": terminated, "blocked_at": None, "wall_clock_ms": wall,
-                "tokens": {"in": tokens_in, "out": tokens_out}, "steps": [],
-                "tool_calls": tool_calls_log, "llm_calls": llm_calls})
-
-    # Close the root span and ship it so the printed URL opens a complete trace right away.
-    context_api.detach(ctx_token)
-    span.end()
-    telemetry.flush()
-
-    if terminated == "error":
-        yield {"type": "error", "step": "agent", "status": 500, "error": err, "terminated": "error"}
-    else:
-        yield {"type": "final", "blocked": False, "blocked_at": None, "response": response_text,
-               "terminated": "done", "wall_clock_ms": wall, "tokens": {"in": tokens_in, "out": tokens_out}}
+    yield _finish("done", None, None, response_text)

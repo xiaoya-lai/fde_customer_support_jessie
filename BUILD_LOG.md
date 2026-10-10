@@ -180,8 +180,8 @@ Bot: I can only look up orders for your account, and I'm unable to find order 5 
 
 ## Stage 6: Sanitizer and Security Judge
 
-- **I decided (who may block, which A2A method):**
-- **Predicted vs actual X01 latency:**
+- **I decided (who may block, which A2A method):** either can block (OR), patterns checked first because it feels tidier. and I prefer  message/send 
+- **Predicted vs actual X01 latency:** I feel the 
 - **When I stopped the Judge, my pipeline first:**
 - **Failing trajectory saved at:**
 

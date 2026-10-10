@@ -39,6 +39,9 @@ def _render(ev: dict) -> None:
         print(f"  turn {ev['turn_id']}  ·  trace {ev['url']}")
     elif t == "stage":
         print(f"» {ev['label']}")
+    elif t == "step":
+        mark = "✓" if ev["status"] == "passed" else "✗"
+        print(f"{mark} {ev['key']:<9} {ev['status']} · {ev['detail']} · {ev['ms']}ms · {ev['span']}")
     elif t == "llm":
         print(f"→ llm         {ev['decision']}   ({ev['ms']}ms, {ev['tokens_out']} tok)")
     elif t == "tool_call":
@@ -49,7 +52,8 @@ def _render(ev: dict) -> None:
         n = len(ev["result"]) if isinstance(ev["result"], list) else 1
         print(f"{mark} tool        {ev['name']}  {n} row(s)   {ev['ms']}ms")
     elif t == "final":
-        print(f"\nBot: {ev['response']}\n")
+        tag = f"[blocked at {ev['blocked_at']}] " if ev["blocked"] else ""
+        print(f"\nBot: {tag}{ev['response']}\n")
     elif t == "error":
         print(f"✗ error       [{ev['step']}] {ev['error']}")
 
