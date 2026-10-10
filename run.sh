@@ -68,6 +68,14 @@ SQL
     exec "$ROOT/.venv/bin/uvicorn" guards.masker.server:app --host 127.0.0.1 --port "$MASKER_PORT"
     ;;
 
+  web)
+    # Start the FastAPI web front end (Stage 9, W-1). Serves the §7.2 API and the UI at /.
+    set -a; . "$ROOT/.env"; set +a
+    export WEB_PORT="${WEB_PORT:-8000}"
+    export PYTHONPATH="$ROOT:${PYTHONPATH:-}"
+    exec "$ROOT/.venv/bin/uvicorn" support.web:app --host 127.0.0.1 --port "$WEB_PORT"
+    ;;
+
   phoenix)
     # Start Phoenix as its own long-lived process with on-disk storage, so traces
     # survive a CLI/agent restart (O-1). Leave this running in its own terminal.
@@ -83,6 +91,6 @@ SQL
     ;;
 
   help|*)
-    echo "usage: ./run.sh {setup|reset|toolbox|judge|masker|phoenix|status}"
+    echo "usage: ./run.sh {setup|reset|toolbox|judge|masker|web|phoenix|status}"
     ;;
 esac

@@ -225,15 +225,56 @@ The tested topics work fine, so I stick with the first build.
 ## Stage 8: Masker and memory
 
 - **I decided (what counts as PII, the cutoff):** I prefer regex and other people's personal information and sensitive identity data should be PII.
-- **My planted memory's score, and whether my cutoff kept it:**
-- **What the Masker reported on my PII test:**
+- **My planted memory's score, and whether my cutoff kept it:** 0.2522. Yes
+- **What the Masker reported on my PII test:** "masked":"Reach Bob at [email] or [phone]."   "detail":"masked 1 email, 1 phone"
 
 
 
 ## Stage 9: the web UI
 
 - **My sketch, in words:**
+
+Here is how to align all three points into a cohesive, sharp update for DESIGN.md and BUILD_LOG.md.
+
+1. Updated Layout Sketch: Collapsible "Behind the scenes" Accordion (Stage 9)
+To accurately document what was built rather than an initial draft concept, use this structural layout representation:
+
+┌────────────────────────────────────────────────────────────────────────┐
+│                        E-COMMERCE CUSTOMER SUPPORT                     │
+├────────────────────────────────────────────────────────────────────────┤
+│ User: What is the status of order 3?                                   │
+│                                                                        │
+│ Agent: Order #3 is SHIPPED. It contains 1x Mechanical Keyboard,       │
+│        placed on Oct 7.                                                │
+│                                                                        │
+│ ▼ [Behind the scenes] ───────────────────────────────────────────────┐ │
+│ │ 🟢 trace    [8f2a9... | Open Phoenix Trace ↗]                      │ │
+│ │ 🟢 sanitize [0.1ms - Passed]                                       │ │
+│ │ 🟢 judge    [120ms - Verdict: ALLOW]                               │ │
+│ │ 🟢 recall   [35ms - 0 memories above threshold]                    │ │
+│ │ 🟢 agent    [280ms]                                                │ │
+│ │    └─ tool: get-order-status                                       │ │
+│ │       SQL: SELECT order_id, status, items, order_date, total_amount │ │
+│ │            FROM customer_orders                                    │ │
+│ │            WHERE order_id = 3                                      │ │
+│ │              AND customer_email = «session customer_email»         │ │
+│ │       Result:                                                      │ │
+│ │       ┌──────────┬─────────┬───────────────────┬────────────┬────────┐│ │
+│ │       │ order_id │ status  │ items             │ order_date │ total  ││ │
+│ │       ├──────────┼─────────┼───────────────────┼────────────┼────────┤│ │
+│ │       │ 3        │ SHIPPED │ 1x Mech Keyboard  │ 2026-10-07 │ $149.99││ │
+│ │       └──────────┴─────────┴───────────────────┴────────────┴────────┘│ │
+│ │ 🟢 mask     [40ms - 0 redactions]                                  │ │
+│ │ 🟢 save     [150ms - User message saved]                           │ │
+│ └────────────────────────────────────────────────────────────────────┘ │
+├────────────────────────────────────────────────────────────────────────┤
+│ [ Input message...                                          ] [ Send ] │
+└────────────────────────────────────────────────────────────────────────┘
+
 - **Something the UI shows that the CLI doesn't (feature or leak?):**
+What the UI shows that the CLI doesn't: We should have not shown the SQL.
+
+Feature or leak? It's a leak to show the SQL. It shows the actual table name and column names which expose the system to attacks.
 
 
 

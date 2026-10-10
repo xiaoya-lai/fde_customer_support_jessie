@@ -1,0 +1,151 @@
+<!doctype html>
+<!-- support/index.html — Stage 9 UI (W-3, W-4). Chat is primary; the pipeline steps live in a
+     collapsible "Behind the scenes" panel per turn that fills in live from the NDJSON stream. -->
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Support</title>
+<style>
+  :root { font-family: ui-sans-serif, system-ui, sans-serif; }
+  body { margin: 0; background: #0f1115; color: #e6e6e6; }
+  #app { max-width: 760px; margin: 0 auto; padding: 20px; }
+  h1 { font-size: 18px; font-weight: 600; }
+  #login input, #bar input { padding: 8px 10px; border-radius: 8px; border: 1px solid #333;
+    background: #1a1d24; color: #e6e6e6; font-size: 14px; }
+  button { padding: 8px 14px; border-radius: 8px; border: 0; background: #3b82f6; color: #fff;
+    font-size: 14px; cursor: pointer; }
+  #chat { margin: 16px 0; }
+  .bubble { padding: 10px 14px; border-radius: 12px; margin: 8px 0; max-width: 80%; white-space: pre-wrap; }
+  .you { background: #1e40af; margin-left: auto; }
+  .bot { background: #1a1d24; border: 1px solid #2a2e37; }
+  .bot.blocked { border-color: #b45309; }
+  details { background: #141720; border: 1px solid #2a2e37; border-radius: 10px; margin: 4px 0 12px; }
+  summary { cursor: pointer; padding: 8px 12px; font-size: 13px; color: #9aa4b2; }
+  .steps { padding: 6px 12px 12px; font-size: 12.5px; font-family: ui-monospace, monospace; }
+  .row { padding: 3px 0; border-top: 1px solid #20242e; }
+  .ok { color: #4ade80; } .bad { color: #f87171; } .mut { color: #8b94a3; }
+  .sql { color: #d6c58c; white-space: pre-wrap; }
+  table { border-collapse: collapse; margin: 4px 0; font-size: 12px; }
+  th, td { border: 1px solid #2a2e37; padding: 2px 8px; text-align: left; }
+  a { color: #7dd3fc; }
+  #bar { display: flex; gap: 8px; } #bar input { flex: 1; }
+  .hide { display: none; }
+</style>
+</head>
+<body><div id="app">
+  <h1>Support</h1>
+  <div id="login">
+    <input id="email" placeholder="email" autocomplete="username">
+    <input id="password" type="password" placeholder="password" autocomplete="current-password">
+    <button onclick="login()">Log in</button>
+    <span id="loginErr" class="bad"></span>
+  </div>
+  <div id="chat"></div>
+  <div id="bar" class="hide">
+    <input id="msg" placeholder="Ask about your orders…" onkeydown="if(event.key==='Enter')send()">
+    <button onclick="send()">Send</button>
+  </div>
+</div>
+<script>
+let USER = null;
+const chat = document.getElementById('chat');
+const esc = s => (s ?? '').toString().replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+async function login() {
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  const r = await fetch('/api/login', {method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({email, password})});
+  if (!r.ok) { document.getElementById('loginErr').textContent = (await r.json()).error; return; }
+  USER = (await r.json()).user_id;
+  document.getElementById('login').classList.add('hide');
+  document.getElementById('bar').classList.remove('hide');
+  document.getElementById('msg').focus();
+}
+
+function fillSql(info, args) {
+  if (!info || !info.statement) return '';
+  let sql = info.statement;
+  (info.params || []).forEach((p, i) => {
+    const v = (args && p in args) ? JSON.stringify(args[p]) : '«session '+p+'»';
+    sql = sql.replace('$' + (i + 1), v);
+  });
+  return sql;
+}
+
+function resultTable(result) {
+  const rows = Array.isArray(result) ? result : [result];
+  if (!rows.length || typeof rows[0] !== 'object' || rows[0] === null)
+    return '<span class="mut">' + esc(JSON.stringify(result)) + '</span>';
+  const cols = Object.keys(rows[0]);
+  const cell = v => esc(v !== null && typeof v === 'object' ? JSON.stringify(v) : v);
+  const head = cols.map(c => '<th>' + esc(c) + '</th>').join('');
+  const body = rows.map(r => '<tr>' + cols.map(c => '<td>' + cell(r[c]) + '</td>').join('') + '</tr>').join('');
+  return '<table><tr>' + head + '</tr>' + body + '</table>';
+}
+
+function render(ev, steps, panel, turn) {
+  const add = html => { const d = document.createElement('div'); d.className = 'row'; d.innerHTML = html; steps.appendChild(d); };
+  if (ev.type === 'trace') {
+    panel.querySelector('summary').dataset.trace = ev.url; turn.traceUrl = ev.url;
+  } else if (ev.type === 'step') {
+    const cls = ev.status === 'passed' ? 'ok' : 'bad';
+    const mark = ev.status === 'passed' ? '✓' : '✗';
+    add(`<span class="${cls}">${mark} ${esc(ev.key)}</span> · ${esc(ev.detail)} <span class="mut">· ${ev.ms}ms · ${esc(ev.span)}</span>`);
+    (ev.memories || []).forEach(m => add(`<span class="mut">　${m.score} ${m.inserted ? 'inserted' : 'skipped (' + esc(m.reason) + ')'} — ${esc(m.memory)}</span>`));
+    turn.count++;
+  } else if (ev.type === 'llm') {
+    add(`<span class="mut">→ llm</span> ${esc(ev.decision)} <span class="mut">(${ev.ms}ms, ${ev.tokens_out} tok)</span>`);
+  } else if (ev.type === 'tool_call') {
+    add(`<span class="mut">→ tool</span> ${esc(ev.name)} <span class="mut">[${esc(ev.info.kind)} ${esc(ev.info.access)}]</span><div class="sql">${esc(fillSql(ev.info, ev.args))}</div>`);
+  } else if (ev.type === 'tool_result') {
+    add(`<span class="${ev.ok ? 'ok' : 'bad'}">${ev.ok ? '✓' : '✗'} result</span> <span class="mut">${ev.ms}ms</span>${resultTable(ev.result)}`);
+  } else if (ev.type === 'final') {
+    const b = document.createElement('div'); b.className = 'bubble bot' + (ev.blocked ? ' blocked' : '');
+    const tag = ev.blocked ? `[blocked at ${esc(ev.blocked_at)}] ` : '';
+    b.innerHTML = tag + esc(ev.response);
+    turn.container.appendChild(b);
+  } else if (ev.type === 'error') {
+    add(`<span class="bad">✗ error [${esc(ev.step)}]</span> ${esc(ev.error)}`);
+    const b = document.createElement('div'); b.className = 'bubble bot blocked';
+    b.textContent = 'Something went wrong on our side.'; turn.container.appendChild(b);
+  }
+}
+
+async function send() {
+  const input = document.getElementById('msg');
+  const message = input.value.trim(); if (!message) return; input.value = '';
+
+  const you = document.createElement('div'); you.className = 'bubble you'; you.textContent = message;
+  chat.appendChild(you);
+
+  const container = document.createElement('div'); chat.appendChild(container);
+  const panel = document.createElement('details');
+  const summary = document.createElement('summary'); summary.textContent = 'Behind the scenes';
+  const steps = document.createElement('div'); steps.className = 'steps';
+  panel.appendChild(summary); panel.appendChild(steps); container.appendChild(panel);
+  const turn = { container, count: 0, traceUrl: null };
+
+  const r = await fetch('/api/chat', {method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({user_id: USER, message})});
+  if (!r.ok) { steps.innerHTML = '<div class="row bad">' + esc((await r.json()).error) + '</div>'; return; }
+
+  const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = '';
+  while (true) {
+    const { value, done } = await reader.read(); if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let nl; while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+      if (line) { render(JSON.parse(line), steps, panel, turn); updateSummary(summary, turn); }
+    }
+  }
+  updateSummary(summary, turn);
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+function updateSummary(summary, turn) {
+  const link = turn.traceUrl ? ` · <a href="${turn.traceUrl}" target="_blank">trace ↗</a>` : '';
+  summary.innerHTML = `Behind the scenes (${turn.count} steps)${link}`;
+}
+</script>
+</body></html>

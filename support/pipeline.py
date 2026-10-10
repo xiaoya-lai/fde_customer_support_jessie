@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import AsyncIterator
 
 import httpx
+import yaml
 from google.genai import types
 from openinference.semconv.trace import OpenInferenceSpanKindValues, SpanAttributes
 from opentelemetry import context as context_api
@@ -67,6 +68,22 @@ async def _ask_masker(text: str, own_email: str) -> dict:
     if "masked" not in result or "detail" not in result:
         raise ValueError(f"unparseable masker result: {body!r}")
     return result
+
+
+_TOOLS_YAML = Path(__file__).resolve().parent.parent / "mcp_toolbox" / "tools.yaml"
+_TOOL_SQL: dict | None = None
+
+
+def _tool_sql(name: str) -> dict:
+    """The SQL statement and $n param order for a tool, from tools.yaml, so the UI can show
+    the SQL that ran with values filled in and bound params marked (§7.1, W-3)."""
+    global _TOOL_SQL
+    if _TOOL_SQL is None:
+        spec = (yaml.safe_load(_TOOLS_YAML.read_text()) or {}).get("tools", {})
+        _TOOL_SQL = {n: {"statement": (t.get("statement") or "").strip(),
+                         "params": [p["name"] for p in t.get("parameters", [])]}
+                     for n, t in spec.items()}
+    return _TOOL_SQL.get(name, {"statement": "", "params": []})
 
 
 def _decode(value):
@@ -243,9 +260,11 @@ async def run_turn(*, runner, user_email: str, session_id: str, message: str) ->
                 for c in fcalls:
                     cid, next_id = next_id, next_id + 1
                     pending.setdefault(c.name, []).append((cid, now))
+                    sql = _tool_sql(c.name)
                     yield {"type": "tool_call", "id": cid, "name": c.name,
                            "args": {k: _decode(v) for k, v in dict(c.args).items()},
-                           "info": {"kind": "MCP", "access": "WRITE" if c.name == "action-log" else "READ"},
+                           "info": {"kind": "MCP", "access": "WRITE" if c.name == "action-log" else "READ",
+                                    "statement": sql["statement"], "params": sql["params"]},
                            "span": f"execute_tool {c.name}"}
 
             for r in ev.get_function_responses():
