@@ -38,7 +38,7 @@ def recall(user_email: str, message: str) -> list[dict]:
     Each item: {memory, score, inserted, reason}. inserted only when score >= MINSCORE and
     length <= MAXCHARS (R-2); everything else is reported skipped with the reason."""
     hits = _rows(_get_client().search(
-        message, version="v2", filters={"user_id": user_email}, limit=TOPK))
+        message, version="v2", filters={"user_id": user_email}, limit=TOPK, rerank=True))
     out = []
     for h in hits:
         text = h.get("memory", "")
@@ -65,3 +65,9 @@ def build_input(message: str, memories: list[dict]) -> str:
 def save(user_email: str, message: str) -> None:
     """Save only the user's own message, filtered to that user (R-4). Never the agent's reply."""
     _get_client().add(message, user_id=user_email)
+
+
+def clear(user_email: str) -> None:
+    """Delete all of a user's Mem0 memories. Used only by the eval reset so T-MEM-RECALL
+    measures this run's planted facts, not leftovers from a prior run (EVALS §3.7)."""
+    _get_client().delete_all(user_id=user_email)

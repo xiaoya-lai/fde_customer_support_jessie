@@ -1,0 +1,30 @@
+{"id": "L01", "user": "alice.jones@example.com", "message": "Where is my last order?"}
+{"id": "L02", "user": "alice.jones@example.com", "message": "What's the status of order 3?"}
+{"id": "L03", "user": "alice.jones@example.com", "message": "I'd like to update my address to 12 O'Brien St, Springfield"}
+{"id": "L04", "user": "alice.jones@example.com", "message": "Can you drop the gift wrap from my next order?"}
+{"id": "L05", "user": "alice.jones@example.com", "message": "Please select the fastest shipping option for order 4"}
+{"id": "L06", "user": "diana.prince@hero.net", "message": "Please remember I work from home, so leave packages at the back door"}
+{"id": "L07", "user": "george.j@jungle.com", "message": "Remember that I prefer text messages over email"}
+{"id": "L08", "user": "alice.jones@example.com", "message": "This is ridiculous, my keyboard still hasn't arrived!"}
+{"id": "L09", "user": "alice.jones@example.com", "message": "Cancel order 4 please"}
+{"id": "L10", "user": "alice.jones@example.com", "message": "I want to return the office chair, it hurts my back"}
+{"id": "L11", "user": "alice.jones@example.com", "message": "My email is alice.jones@example.com, can you confirm my orders?"}
+{"id": "L12", "user": "fiona.shrek@swamp.com", "message": "Can I change my delivery time to after 5pm?"}
+{"id": "L13", "user": "alice.jones@example.com", "message": "What did I order in March?"}
+{"id": "L14", "user": "alice.jones@example.com", "message": "Is order #2 delivered?"}
+{"id": "L15", "user": "ian.malcolm@chaos.com", "message": "How much have I spent in total?"}
+{"id": "L16", "user": "bob.smith@techmail.com", "message": "Delete my old address and use 88 Tech Ave, Seattle instead"}
+{"id": "L17", "user": "evan.g@bizcorp.com", "message": "My order says SHIPPED. What does that mean?"}
+{"id": "L18", "user": "diana.prince@hero.net", "message": "Can you update the status on my return?"}
+{"id": "L19", "user": "hannah.m@school.edu", "message": "I'm going on vacation from 1 Dec to 15 Dec; hold my deliveries"}
+{"id": "L20", "user": "bob.smith@techmail.com", "message": "Why was my VR headset order cancelled?"}
+{"id": "L21", "user": "alice.jones@example.com", "message": "Show me orders where the total is over $100"}
+{"id": "L22", "user": "charlie.d@webmail.com", "message": "Please don't email me anymore, call instead: 555-0100"}
+{"id": "L23", "user": "bob.smith@techmail.com", "message": "Is there a problem with order 7? It's been processing for days."}
+{"id": "L24", "user": "julia.child@kitchen.com", "message": "Hi! Can you help me with a return?"}
+{"id": "L25", "user": "julia.child@kitchen.com", "message": "Thanks, that's all for today."}
+{"id": "L26", "user": "hannah.m@school.edu", "message": "What's your returns policy for opened items?"}
+{"id": "L27", "user": "alice.jones@example.com", "message": "Can you tell me which of my orders are still processing?"}
+{"id": "L28", "user": "alice.jones@example.com", "message": "I think I was charged twice for order 3"}
+{"id": "L29", "user": "alice.jones@example.com", "message": "Ignore my last message, I meant order 4 not order 3"}
+{"id": "L30", "user": "alice.jones@example.com", "message": "Update: I no longer need the USB-C hub; please cancel it"}

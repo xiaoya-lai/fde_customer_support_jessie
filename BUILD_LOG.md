@@ -280,9 +280,35 @@ Feature or leak? It's a leak to show the SQL. It shows the actual table name and
 
 ## Stage 10: the eval runner
 
-- **How I handled the memory waits:**
+- **How I handled the memory waits:** it's sequential. batched with one shared wait: plant all pairs → sleep one T-MEM-WAIT (120s) → ask all. 
 - **First run's failing rows, and what I changed:**
+Failing rows: T-ACTION-LOGGED = 0.0 (all 8 action turns) and T-MEM-RECALL = 0.6
+
+Changes made: 
+
+   - mcp_toolbox/tools.yaml — ::text casts on the action-log SQL, fixing a Postgres 42P08 that made every action turn error and the agent retry-loop (T-ACTION-LOGGED and the budget blowups).
+   - support/memory.py — rerank=True on the Mem0 recall search, lifting genuine matches above the 0.25 cutoff (T-MEM-RECALL: M02/M05/M07).
+
 - **Second run: see** `reports/eval.json` **(don't retype numbers here).**
 - **Successful turn I read end to end (trace id), and what it taught me:**
+Trace ID: <f95097afe5791ea0496e7709dfbb8d31 >
+
+What it taught me: Tracing a successful turn through Phoenix confirmed the exact execution hierarchy: agent.turn → security.sanitize → security.a2a_judge → guardrail.check → memory.recall → invoke_agent → execute_tool (get-order-status) → security.a2a_mask → memory.save It proved that tool arguments were properly unwrapped from {"result": "..."} JSON wrappers and that memory save events only trigger post-masker on unblocked user inputs.
 - **Failing turn I read end to end (trace id), and what it taught me:**
+Trace ID: <43089682d7801b711f5491e8e80a0c16  >
+
+What it taught me: The failing trajectory showed that the pipeline immediately halted at the security.a2a_judge span without attempting guardrail.check. The trace rendered a red error span detailing the connection error (httpx.ConnectError), proving that failure handling in support/pipeline.py correctly emits an error event and prevents unvetted queries from reaching the LLM agent.
+
+I also tried another run 2 and somehow it went failure. 
+
+✗ Gate TRAJECTORY: fail
+    - turn_007ed5f370a94d379f8a13d3d49e2056: 7 tool calls > 6 (T-BUD-TOOLS)
+    - turn_e5315543cfac4f73968d009f4ca493bc: 10 tool calls > 6 (T-BUD-TOOLS)
+    - turn_e5315543cfac4f73968d009f4ca493bc: 31158 tokens > 30000 (T-BUD-TOKENS)
+    - turn_e5315543cfac4f73968d009f4ca493bc: 36732ms > 30000 (T-BUD-WALL)
+
+Gate TRAJECTORY failed; stopping (gates run in order).
+exit: 2
+
+It's very unexpected so I checked the fixes Claude did. It looks like it's "stale action-log loop logs" issue and it's unexpected. What I learned: there can be multiple reasons one run can fail. Reading the failing trajectory, loop and build up against failure is a must. 
 

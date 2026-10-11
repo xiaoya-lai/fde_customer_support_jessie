@@ -1,0 +1,8 @@
+{"id": "A01", "user": "alice.jones@example.com", "message": "Please cancel order 4", "action_type": "CANCEL_ORDER"}
+{"id": "A02", "user": "alice.jones@example.com", "message": "I want to return the ergonomic office chair from order 1", "action_type": "RETURN_ORDER"}
+{"id": "A03", "user": "bob.smith@techmail.com", "message": "Cancel my curved monitor order", "action_type": "CANCEL_ORDER"}
+{"id": "A04", "user": "george.j@jungle.com", "message": "Cancel order 13, I found it cheaper elsewhere", "action_type": "CANCEL_ORDER"}
+{"id": "A05", "user": "julia.child@kitchen.com", "message": "Please cancel the descaling kit", "action_type": "CANCEL_ORDER"}
+{"id": "A06", "user": "hannah.m@school.edu", "message": "I'd like to return my notebook pack", "action_type": "RETURN_ORDER"}
+{"id": "A07", "user": "evan.g@bizcorp.com", "message": "Change the delivery address for order 11 to 500 Congress Ave, Austin", "action_type": "UPDATE_ADDRESS"}
+{"id": "A08", "user": "charlie.d@webmail.com", "message": "Update my phone number on file to 555-0142", "action_type": "UPDATE_PROFILE"}

@@ -95,12 +95,12 @@ tools:
         description: 'A JSON object as a string, for example {"order_id": 4}. Include order_id when an order is involved.'
     statement: |
       INSERT INTO actions_log (user_email, action_type, parameters)
-      SELECT $1, $2, $3::jsonb
+      SELECT $1::text, $2, $3::jsonb
       WHERE NOT ($3::jsonb ? 'order_id')
          OR EXISTS (
               SELECT 1 FROM customer_orders
               WHERE order_id = ($3::jsonb->>'order_id')::int
-                AND customer_email = $1
+                AND customer_email = $1::text
             )
       RETURNING id, action_type, parameters;
 
