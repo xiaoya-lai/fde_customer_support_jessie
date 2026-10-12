@@ -1,0 +1,16 @@
+{
+  "turn_id": "turn_8da2dd177774422eafaa59fcf8972716",
+  "trace_id": "43089682d7801b711f5491e8e80a0c16",
+  "user": "alice.jones@example.com",
+  "message": "What's the status of order 3?",
+  "terminated": "error",
+  "blocked_at": "judge",
+  "wall_clock_ms": 68,
+  "tokens": {
+    "in": 0,
+    "out": 0
+  },
+  "steps": [],
+  "tool_calls": [],
+  "llm_calls": 0
+}
