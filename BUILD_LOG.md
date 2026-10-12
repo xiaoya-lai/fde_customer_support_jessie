@@ -280,7 +280,7 @@ Feature or leak? It's a leak to show the SQL. It shows the actual table name and
 
 ## Stage 10: the eval runner
 
-- **How I handled the memory waits:** it's sequential. batched with one shared wait: plant all pairs → sleep one T-MEM-WAIT (120s) → ask all. 
+- **How I handled the memory waits:** it's sequential. plant all pairs → sleep one T-MEM-WAIT (120s) → ask all. 
 - **First run's failing rows, and what I changed:**
 Failing rows: T-ACTION-LOGGED = 0.0 (all 8 action turns) and T-MEM-RECALL = 0.6
 
@@ -311,4 +311,6 @@ Gate TRAJECTORY failed; stopping (gates run in order).
 exit: 2
 
 It's very unexpected so I checked the fixes Claude did. It looks like it's "stale action-log loop logs" issue and it's unexpected. What I learned: there can be multiple reasons one run can fail. Reading the failing trajectory, loop and build up against failure is a must. 
+
+I also experienced multiple rounds of failures due to Gemini hitting resource constraints - I had to add a PACE inter-turn sleep in eval/sets.py to make it able to go through.
 
