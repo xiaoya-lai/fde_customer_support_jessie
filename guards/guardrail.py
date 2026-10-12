@@ -8,6 +8,7 @@ deleted afterwards, so one message's verdict cannot colour the next (GR-3). A de
 that cannot be parsed into safe|unsafe is raised as an error, never treated as a pass
 (GR-4, the Live Translate precedent R-4).
 """
+import asyncio
 import json
 import re
 import uuid
@@ -55,11 +56,12 @@ _sessions = InMemorySessionService()
 _runner = Runner(agent=_agent, app_name=APP, session_service=_sessions)
 
 
-async def check(message: str) -> dict:
-    """Run the Guardrail on one message in a fresh, disposable session (GR-3).
+RETRIES = 2            # attempts after the first; a transient 429/empty output is retried
+BACKOFF = (1.5, 3.0)   # seconds to wait before each retry
 
-    Returns {"decision": "safe"|"unsafe", "reasoning": str}. Raises ValueError if the
-    agent's output cannot be parsed into a valid decision (GR-4)."""
+
+async def _check_once(message: str) -> dict:
+    """One attempt: run the Guardrail on a message in a fresh, disposable session (GR-3)."""
     sid = "guardrail_" + uuid.uuid4().hex
     await _sessions.create_session(app_name=APP, user_id="guardrail", session_id=sid)
     out = ""
@@ -77,3 +79,17 @@ async def check(message: str) -> dict:
     if data.get("decision") not in ("safe", "unsafe"):
         raise ValueError(f"invalid guardrail decision: {data!r}")
     return {"decision": data["decision"], "reasoning": data.get("reasoning", "")}
+
+
+async def check(message: str) -> dict:
+    """Run the Guardrail, retrying a transient failure (rate-limit / empty output) a bounded
+    number of times before raising. The retry does NOT soften fail-loud (GR-4, the Live
+    Translate precedent R-4): once attempts are exhausted the ValueError propagates and the
+    turn ends `error` — it only rides out a per-minute throttle burst."""
+    for attempt in range(RETRIES + 1):
+        try:
+            return await _check_once(message)
+        except Exception:
+            if attempt == RETRIES:
+                raise
+            await asyncio.sleep(BACKOFF[attempt])

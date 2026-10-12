@@ -7,6 +7,7 @@ Decision A: patterns are checked first and block on their own without a model ca
 model. The reply is always an explicit {verdict, reason} (J-3); an output that cannot
 be parsed into allow|block becomes a JSON-RPC error the pipeline treats as a failure (J-4).
 """
+import asyncio
 import json
 import os
 import re
@@ -55,16 +56,22 @@ def _text(params: dict) -> str:
     return " ".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
 
 
-async def _model_verdict(text: str) -> dict:
-    """Run the ADK Judge agent on a message with no deterministic match, and parse its verdict."""
+RETRIES = 2            # attempts after the first; a transient 429/empty output is retried
+BACKOFF = (1.5, 3.0)   # seconds to wait before each retry
+
+
+async def _verdict_once(text: str) -> dict:
+    """One attempt: run the ADK Judge agent on a message with no deterministic match, parse it."""
     sid = "judge_" + uuid.uuid4().hex
     await _sessions.create_session(app_name=APP, user_id="judge", session_id=sid)
     out = ""
     content = types.Content(role="user", parts=[types.Part(text=text)])
-    async for ev in _runner.run_async(user_id="judge", session_id=sid, new_message=content):
-        if ev.is_final_response() and ev.content and ev.content.parts and ev.content.parts[0].text:
-            out = ev.content.parts[0].text
-    await _sessions.delete_session(app_name=APP, user_id="judge", session_id=sid)
+    try:
+        async for ev in _runner.run_async(user_id="judge", session_id=sid, new_message=content):
+            if ev.is_final_response() and ev.content and ev.content.parts and ev.content.parts[0].text:
+                out = ev.content.parts[0].text
+    finally:
+        await _sessions.delete_session(app_name=APP, user_id="judge", session_id=sid)
     m = _JSON_RE.search(out)
     if not m:
         raise ValueError(f"unparseable judge output: {out!r}")
@@ -72,6 +79,19 @@ async def _model_verdict(text: str) -> dict:
     if data.get("verdict") not in ("allow", "block"):
         raise ValueError(f"invalid verdict: {data!r}")
     return {"verdict": data["verdict"], "reason": data.get("reason", "")}
+
+
+async def _model_verdict(text: str) -> dict:
+    """Retry a transient failure (rate-limit / empty output) a bounded number of times, then
+    raise. Retrying does NOT soften fail-loud (J-4): once attempts are exhausted the error
+    propagates and the turn ends `error` — it only rides out the per-minute throttle burst."""
+    for attempt in range(RETRIES + 1):
+        try:
+            return await _verdict_once(text)
+        except Exception:
+            if attempt == RETRIES:
+                raise
+            await asyncio.sleep(BACKOFF[attempt])
 
 
 @app.post("/")

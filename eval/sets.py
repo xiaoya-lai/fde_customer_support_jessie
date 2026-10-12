@@ -12,10 +12,14 @@ from eval.db import snapshot_orders
 from eval.drive import drive_turn, terminal
 
 MEM_WAIT = 120  # T-MEM-WAIT: Mem0's async extraction returns PENDING before this
+PACE = 1.0      # seconds between turns: keeps the run under Gemini's per-minute rate limit so
+                # calls don't get throttled/queued. Sleeps AFTER the measured turn, so it never
+                # counts toward wall_clock_ms, T-LAT-* or T-BUD-WALL — it only protects the next turn.
 
 
 def _gather(item: dict, message: str) -> dict:
     events, run_log = drive_turn(item["user"], message)
+    time.sleep(PACE)
     trace_id = next((e["trace_id"] for e in events if e.get("type") == "trace"), None)
     return {**item, "events": events, "run_log": run_log, "terminal": terminal(events),
             "trace_id": trace_id, "ms": (run_log or {}).get("wall_clock_ms")}
