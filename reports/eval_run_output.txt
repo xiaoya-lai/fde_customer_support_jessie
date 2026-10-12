@@ -1,0 +1,50 @@
+$ .venv/bin/python -m eval.run
+✓ Gate STATIC: pass
+✓ Gate HEALTH: pass
+DROP TABLE
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+INSERT 0 10
+CREATE TABLE
+CREATE INDEX
+INSERT 0 17
+CREATE TABLE
+GRANT
+GRANT
+GRANT
+reset done: tables dropped, recreated, seeded (EVALS §2).
+  cleared Mem0 for charlie.d@webmail.com
+  cleared Mem0 for diana.prince@hero.net
+  cleared Mem0 for evan.g@bizcorp.com
+  cleared Mem0 for fiona.shrek@swamp.com
+  cleared Mem0 for george.j@jungle.com
+  cleared Mem0 for hannah.m@school.edu
+  cleared Mem0 for ian.malcolm@chaos.com
+✓ Gate SMOKE: pass
+✓ Gate TRAJECTORY: pass
+DROP TABLE
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+INSERT 0 10
+CREATE TABLE
+CREATE INDEX
+INSERT 0 17
+CREATE TABLE
+GRANT
+GRANT
+GRANT
+reset done: tables dropped, recreated, seeded (EVALS §2).
+  cleared Mem0 for charlie.d@webmail.com
+  cleared Mem0 for diana.prince@hero.net
+  cleared Mem0 for evan.g@bizcorp.com
+  cleared Mem0 for fiona.shrek@swamp.com
+  cleared Mem0 for george.j@jungle.com
+  cleared Mem0 for hannah.m@school.edu
+  cleared Mem0 for ian.malcolm@chaos.com
+    wrote reports/eval.json
+✓ Gate EVAL: pass
+✓ Gate HUMAN: pass
+
+All gates passed. See reports/eval.json.
